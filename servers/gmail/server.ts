@@ -144,6 +144,55 @@ metorial.createServer<{
     const GMAIL_MODIFY = 'https://www.googleapis.com/auth/gmail.modify';
     const GMAIL_LABELS = 'https://www.googleapis.com/auth/gmail.labels';
     const GMAIL_SETTINGS = 'https://www.googleapis.com/auth/gmail.settings.basic';
+    const USERINFO_EMAIL = 'https://www.googleapis.com/auth/userinfo.email';
+
+    const toolScopes: Record<string, string[]> = {
+      // Messages
+      list_messages: [GMAIL_MODIFY],
+      get_message: [GMAIL_MODIFY],
+      send_message: [GMAIL_MODIFY],
+      reply_to_message: [GMAIL_MODIFY],
+      forward_message: [GMAIL_MODIFY],
+      delete_message: [GMAIL_MODIFY],
+      trash_message: [GMAIL_MODIFY],
+      untrash_message: [GMAIL_MODIFY],
+      modify_message: [GMAIL_MODIFY],
+      mark_as_read: [GMAIL_MODIFY],
+      mark_as_unread: [GMAIL_MODIFY],
+      star_message: [GMAIL_MODIFY],
+      unstar_message: [GMAIL_MODIFY],
+      mark_as_spam: [GMAIL_MODIFY],
+      mark_as_important: [GMAIL_MODIFY],
+      search_messages: [GMAIL_MODIFY],
+      get_attachment: [GMAIL_MODIFY],
+      // Threads
+      list_threads: [GMAIL_MODIFY],
+      get_thread: [GMAIL_MODIFY],
+      modify_thread: [GMAIL_MODIFY],
+      trash_thread: [GMAIL_MODIFY],
+      delete_thread: [GMAIL_MODIFY],
+      // Drafts
+      list_drafts: [GMAIL_MODIFY],
+      get_draft: [GMAIL_MODIFY],
+      create_draft: [GMAIL_MODIFY],
+      update_draft: [GMAIL_MODIFY],
+      send_draft: [GMAIL_MODIFY],
+      delete_draft: [GMAIL_MODIFY],
+      // Labels
+      list_labels: [GMAIL_LABELS],
+      get_label: [GMAIL_LABELS],
+      create_label: [GMAIL_LABELS],
+      update_label: [GMAIL_LABELS],
+      delete_label: [GMAIL_LABELS],
+      // Filters & Settings
+      list_filters: [GMAIL_SETTINGS],
+      create_filter: [GMAIL_SETTINGS],
+      delete_filter: [GMAIL_SETTINGS],
+      get_vacation_settings: [GMAIL_SETTINGS],
+      update_vacation_settings: [GMAIL_SETTINGS],
+      // Profile
+      get_profile: [USERINFO_EMAIL]
+    };
 
     const grantedScopes = new Set(config.grantedScopes ?? []);
 
@@ -169,6 +218,23 @@ metorial.createServer<{
           text: `This tool requires OAuth scopes that were not granted: ${missing.join(', ')}. Please re-authenticate and grant the required permissions.`
         }]
       };
+    }
+
+    function registerScopedTool<T extends Record<string, any>>(
+      name: string,
+      options: Omit<Parameters<typeof server.registerTool>[1], '_meta'>,
+      handler: (input: T) => Promise<any>
+    ) {
+      const scopes = toolScopes[name] ?? [];
+      server.registerTool(
+        name,
+        { ...options, _meta: scopeMeta(scopes) } as any,
+        async (input: T) => {
+          const err = scopeError(scopes);
+          if (err) return err;
+          return handler(input);
+        }
+      );
     }
 
     // Helper function to make Gmail API calls
@@ -232,7 +298,7 @@ metorial.createServer<{
     }
 
     // ==================== MESSAGE TOOLS ====================
-    server.registerTool(
+    registerScopedTool(
       'list_messages',
       {
         title: 'List Messages',
@@ -248,12 +314,10 @@ metorial.createServer<{
             .boolean()
             .optional()
             .describe('Include spam and trash (default: false)')
-        },
-        _meta: scopeMeta([GMAIL_MODIFY])
+        }
       },
       async ({ query, labelIds, maxResults = 100, includeSpamTrash = false }) => {
-        const err = scopeError([GMAIL_MODIFY]);
-        if (err) return err;
+
         let endpoint = `/users/me/messages?maxResults=${maxResults}`;
 
         if (query) endpoint += `&q=${encodeURIComponent(query)}`;
@@ -268,7 +332,7 @@ metorial.createServer<{
       }
     );
 
-    server.registerTool(
+    registerScopedTool(
       'get_message',
       {
         title: 'Get Message',
@@ -279,12 +343,10 @@ metorial.createServer<{
             .enum(['minimal', 'full', 'raw', 'metadata'])
             .optional()
             .describe('Message format (default: full)')
-        },
-        _meta: scopeMeta([GMAIL_MODIFY])
+        }
       },
       async ({ messageId, format = 'full' }) => {
-        const err = scopeError([GMAIL_MODIFY]);
-        if (err) return err;
+
         const result = await makeGmailRequest(
           `/users/me/messages/${messageId}?format=${format}`
         );
@@ -294,7 +356,7 @@ metorial.createServer<{
       }
     );
 
-    server.registerTool(
+    registerScopedTool(
       'send_message',
       {
         title: 'Send Message',
@@ -307,12 +369,10 @@ metorial.createServer<{
           cc: z.array(z.string()).optional().describe('CC recipients'),
           bcc: z.array(z.string()).optional().describe('BCC recipients'),
           from: z.string().optional().describe('From address (if you have multiple)')
-        },
-        _meta: scopeMeta([GMAIL_MODIFY])
+        }
       },
-      async input => {
-        const err = scopeError([GMAIL_MODIFY]);
-        if (err) return err;
+      asyncinput => {
+
         const raw = createMimeMessage(
           input.to,
           input.subject,
@@ -330,7 +390,7 @@ metorial.createServer<{
       }
     );
 
-    server.registerTool(
+    registerScopedTool(
       'reply_to_message',
       {
         title: 'Reply to Message',
@@ -340,12 +400,10 @@ metorial.createServer<{
           body: z.string().describe('Reply body'),
           isHtml: z.boolean().optional().describe('Whether body is HTML (default: false)'),
           replyAll: z.boolean().optional().describe('Reply to all recipients (default: false)')
-        },
-        _meta: scopeMeta([GMAIL_MODIFY])
+        }
       },
       async ({ messageId, body, isHtml = false, replyAll = false }) => {
-        const err = scopeError([GMAIL_MODIFY]);
-        if (err) return err;
+
         // Get original message
         const originalMessage = (await makeGmailRequest(
           `/users/me/messages/${messageId}?format=full`
@@ -404,7 +462,7 @@ metorial.createServer<{
       }
     );
 
-    server.registerTool(
+    registerScopedTool(
       'forward_message',
       {
         title: 'Forward Message',
@@ -414,12 +472,10 @@ metorial.createServer<{
           to: z.array(z.string()).describe('Recipients to forward to'),
           body: z.string().optional().describe('Additional message to include'),
           isHtml: z.boolean().optional().describe('Whether body is HTML (default: false)')
-        },
-        _meta: scopeMeta([GMAIL_MODIFY])
+        }
       },
       async ({ messageId, to, body = '', isHtml = false }) => {
-        const err = scopeError([GMAIL_MODIFY]);
-        if (err) return err;
+
         const originalMessage = (await makeGmailRequest(
           `/users/me/messages/${messageId}?format=full`
         )) as any;
@@ -454,19 +510,17 @@ metorial.createServer<{
       }
     );
 
-    server.registerTool(
+    registerScopedTool(
       'delete_message',
       {
         title: 'Delete Message',
         description: 'Permanently delete a message',
         inputSchema: {
           messageId: z.string().describe('Message ID to delete')
-        },
-        _meta: scopeMeta([GMAIL_MODIFY])
+        }
       },
       async ({ messageId }) => {
-        const err = scopeError([GMAIL_MODIFY]);
-        if (err) return err;
+
         const result = await makeGmailRequest(`/users/me/messages/${messageId}`, 'DELETE');
         return {
           content: [
@@ -479,19 +533,17 @@ metorial.createServer<{
       }
     );
 
-    server.registerTool(
+    registerScopedTool(
       'trash_message',
       {
         title: 'Trash Message',
         description: 'Move a message to trash',
         inputSchema: {
           messageId: z.string().describe('Message ID to trash')
-        },
-        _meta: scopeMeta([GMAIL_MODIFY])
+        }
       },
       async ({ messageId }) => {
-        const err = scopeError([GMAIL_MODIFY]);
-        if (err) return err;
+
         const result = await makeGmailRequest(`/users/me/messages/${messageId}/trash`, 'POST');
         return {
           content: [{ type: 'text', text: JSON.stringify(result, null, 2) }]
@@ -499,19 +551,17 @@ metorial.createServer<{
       }
     );
 
-    server.registerTool(
+    registerScopedTool(
       'untrash_message',
       {
         title: 'Untrash Message',
         description: 'Remove a message from trash',
         inputSchema: {
           messageId: z.string().describe('Message ID to untrash')
-        },
-        _meta: scopeMeta([GMAIL_MODIFY])
+        }
       },
       async ({ messageId }) => {
-        const err = scopeError([GMAIL_MODIFY]);
-        if (err) return err;
+
         const result = await makeGmailRequest(
           `/users/me/messages/${messageId}/untrash`,
           'POST'
@@ -522,7 +572,7 @@ metorial.createServer<{
       }
     );
 
-    server.registerTool(
+    registerScopedTool(
       'modify_message',
       {
         title: 'Modify Message',
@@ -531,12 +581,10 @@ metorial.createServer<{
           messageId: z.string().describe('Message ID'),
           addLabelIds: z.array(z.string()).optional().describe('Label IDs to add'),
           removeLabelIds: z.array(z.string()).optional().describe('Label IDs to remove')
-        },
-        _meta: scopeMeta([GMAIL_MODIFY])
+        }
       },
       async ({ messageId, addLabelIds, removeLabelIds }) => {
-        const err = scopeError([GMAIL_MODIFY]);
-        if (err) return err;
+
         const body: any = {};
         if (addLabelIds) body.addLabelIds = addLabelIds;
         if (removeLabelIds) body.removeLabelIds = removeLabelIds;
@@ -552,19 +600,17 @@ metorial.createServer<{
       }
     );
 
-    server.registerTool(
+    registerScopedTool(
       'mark_as_read',
       {
         title: 'Mark as Read',
         description: 'Mark a message as read',
         inputSchema: {
           messageId: z.string().describe('Message ID')
-        },
-        _meta: scopeMeta([GMAIL_MODIFY])
+        }
       },
       async ({ messageId }) => {
-        const err = scopeError([GMAIL_MODIFY]);
-        if (err) return err;
+
         const result = await makeGmailRequest(
           `/users/me/messages/${messageId}/modify`,
           'POST',
@@ -578,19 +624,17 @@ metorial.createServer<{
       }
     );
 
-    server.registerTool(
+    registerScopedTool(
       'mark_as_unread',
       {
         title: 'Mark as Unread',
         description: 'Mark a message as unread',
         inputSchema: {
           messageId: z.string().describe('Message ID')
-        },
-        _meta: scopeMeta([GMAIL_MODIFY])
+        }
       },
       async ({ messageId }) => {
-        const err = scopeError([GMAIL_MODIFY]);
-        if (err) return err;
+
         const result = await makeGmailRequest(
           `/users/me/messages/${messageId}/modify`,
           'POST',
@@ -604,19 +648,17 @@ metorial.createServer<{
       }
     );
 
-    server.registerTool(
+    registerScopedTool(
       'star_message',
       {
         title: 'Star Message',
         description: 'Add star to a message',
         inputSchema: {
           messageId: z.string().describe('Message ID')
-        },
-        _meta: scopeMeta([GMAIL_MODIFY])
+        }
       },
       async ({ messageId }) => {
-        const err = scopeError([GMAIL_MODIFY]);
-        if (err) return err;
+
         const result = await makeGmailRequest(
           `/users/me/messages/${messageId}/modify`,
           'POST',
@@ -630,19 +672,17 @@ metorial.createServer<{
       }
     );
 
-    server.registerTool(
+    registerScopedTool(
       'unstar_message',
       {
         title: 'Unstar Message',
         description: 'Remove star from a message',
         inputSchema: {
           messageId: z.string().describe('Message ID')
-        },
-        _meta: scopeMeta([GMAIL_MODIFY])
+        }
       },
       async ({ messageId }) => {
-        const err = scopeError([GMAIL_MODIFY]);
-        if (err) return err;
+
         const result = await makeGmailRequest(
           `/users/me/messages/${messageId}/modify`,
           'POST',
@@ -656,19 +696,17 @@ metorial.createServer<{
       }
     );
 
-    server.registerTool(
+    registerScopedTool(
       'mark_as_spam',
       {
         title: 'Mark as Spam',
         description: 'Mark a message as spam',
         inputSchema: {
           messageId: z.string().describe('Message ID')
-        },
-        _meta: scopeMeta([GMAIL_MODIFY])
+        }
       },
       async ({ messageId }) => {
-        const err = scopeError([GMAIL_MODIFY]);
-        if (err) return err;
+
         const result = await makeGmailRequest(
           `/users/me/messages/${messageId}/modify`,
           'POST',
@@ -683,19 +721,17 @@ metorial.createServer<{
       }
     );
 
-    server.registerTool(
+    registerScopedTool(
       'mark_as_important',
       {
         title: 'Mark as Important',
         description: 'Mark a message as important',
         inputSchema: {
           messageId: z.string().describe('Message ID')
-        },
-        _meta: scopeMeta([GMAIL_MODIFY])
+        }
       },
       async ({ messageId }) => {
-        const err = scopeError([GMAIL_MODIFY]);
-        if (err) return err;
+
         const result = await makeGmailRequest(
           `/users/me/messages/${messageId}/modify`,
           'POST',
@@ -711,7 +747,7 @@ metorial.createServer<{
 
     // ==================== THREAD TOOLS ====================
 
-    server.registerTool(
+    registerScopedTool(
       'list_threads',
       {
         title: 'List Threads',
@@ -723,12 +759,10 @@ metorial.createServer<{
             .number()
             .optional()
             .describe('Maximum number of threads (default: 100)')
-        },
-        _meta: scopeMeta([GMAIL_MODIFY])
+        }
       },
       async ({ query, labelIds, maxResults = 100 }) => {
-        const err = scopeError([GMAIL_MODIFY]);
-        if (err) return err;
+
         let endpoint = `/users/me/threads?maxResults=${maxResults}`;
 
         if (query) endpoint += `&q=${encodeURIComponent(query)}`;
@@ -742,7 +776,7 @@ metorial.createServer<{
       }
     );
 
-    server.registerTool(
+    registerScopedTool(
       'get_thread',
       {
         title: 'Get Thread',
@@ -753,12 +787,10 @@ metorial.createServer<{
             .enum(['minimal', 'full', 'metadata'])
             .optional()
             .describe('Message format (default: full)')
-        },
-        _meta: scopeMeta([GMAIL_MODIFY])
+        }
       },
       async ({ threadId, format = 'full' }) => {
-        const err = scopeError([GMAIL_MODIFY]);
-        if (err) return err;
+
         const result = await makeGmailRequest(
           `/users/me/threads/${threadId}?format=${format}`
         );
@@ -768,7 +800,7 @@ metorial.createServer<{
       }
     );
 
-    server.registerTool(
+    registerScopedTool(
       'modify_thread',
       {
         title: 'Modify Thread',
@@ -777,12 +809,10 @@ metorial.createServer<{
           threadId: z.string().describe('Thread ID'),
           addLabelIds: z.array(z.string()).optional().describe('Label IDs to add'),
           removeLabelIds: z.array(z.string()).optional().describe('Label IDs to remove')
-        },
-        _meta: scopeMeta([GMAIL_MODIFY])
+        }
       },
       async ({ threadId, addLabelIds, removeLabelIds }) => {
-        const err = scopeError([GMAIL_MODIFY]);
-        if (err) return err;
+
         const body: any = {};
         if (addLabelIds) body.addLabelIds = addLabelIds;
         if (removeLabelIds) body.removeLabelIds = removeLabelIds;
@@ -798,19 +828,17 @@ metorial.createServer<{
       }
     );
 
-    server.registerTool(
+    registerScopedTool(
       'trash_thread',
       {
         title: 'Trash Thread',
         description: 'Move all messages in a thread to trash',
         inputSchema: {
           threadId: z.string().describe('Thread ID')
-        },
-        _meta: scopeMeta([GMAIL_MODIFY])
+        }
       },
       async ({ threadId }) => {
-        const err = scopeError([GMAIL_MODIFY]);
-        if (err) return err;
+
         const result = await makeGmailRequest(`/users/me/threads/${threadId}/trash`, 'POST');
         return {
           content: [{ type: 'text', text: JSON.stringify(result, null, 2) }]
@@ -818,19 +846,17 @@ metorial.createServer<{
       }
     );
 
-    server.registerTool(
+    registerScopedTool(
       'delete_thread',
       {
         title: 'Delete Thread',
         description: 'Permanently delete a thread',
         inputSchema: {
           threadId: z.string().describe('Thread ID')
-        },
-        _meta: scopeMeta([GMAIL_MODIFY])
+        }
       },
       async ({ threadId }) => {
-        const err = scopeError([GMAIL_MODIFY]);
-        if (err) return err;
+
         const result = await makeGmailRequest(`/users/me/threads/${threadId}`, 'DELETE');
         return {
           content: [
@@ -845,17 +871,15 @@ metorial.createServer<{
 
     // ==================== LABEL TOOLS ====================
 
-    server.registerTool(
+    registerScopedTool(
       'list_labels',
       {
         title: 'List Labels',
         description: 'List all labels in the mailbox',
         inputSchema: {},
-        _meta: scopeMeta([GMAIL_LABELS])
       },
       async () => {
-        const err = scopeError([GMAIL_LABELS]);
-        if (err) return err;
+
         const result = await makeGmailRequest('/users/me/labels');
         return {
           content: [{ type: 'text', text: JSON.stringify(result, null, 2) }]
@@ -863,19 +887,17 @@ metorial.createServer<{
       }
     );
 
-    server.registerTool(
+    registerScopedTool(
       'get_label',
       {
         title: 'Get Label',
         description: 'Get details of a specific label',
         inputSchema: {
           labelId: z.string().describe('Label ID')
-        },
-        _meta: scopeMeta([GMAIL_LABELS])
+        }
       },
       async ({ labelId }) => {
-        const err = scopeError([GMAIL_LABELS]);
-        if (err) return err;
+
         const result = await makeGmailRequest(`/users/me/labels/${labelId}`);
         return {
           content: [{ type: 'text', text: JSON.stringify(result, null, 2) }]
@@ -883,7 +905,7 @@ metorial.createServer<{
       }
     );
 
-    server.registerTool(
+    registerScopedTool(
       'create_label',
       {
         title: 'Create Label',
@@ -905,12 +927,10 @@ metorial.createServer<{
             })
             .optional()
             .describe('Label color')
-        },
-        _meta: scopeMeta([GMAIL_LABELS])
+        }
       },
-      async input => {
-        const err = scopeError([GMAIL_LABELS]);
-        if (err) return err;
+      asyncinput => {
+
         const label: any = {
           name: input.name
         };
@@ -927,7 +947,7 @@ metorial.createServer<{
       }
     );
 
-    server.registerTool(
+    registerScopedTool(
       'update_label',
       {
         title: 'Update Label',
@@ -946,12 +966,10 @@ metorial.createServer<{
             })
             .optional()
             .describe('Label color')
-        },
-        _meta: scopeMeta([GMAIL_LABELS])
+        }
       },
       async ({ labelId, ...updates }) => {
-        const err = scopeError([GMAIL_LABELS]);
-        if (err) return err;
+
         const label: any = {};
 
         if (updates.name) label.name = updates.name;
@@ -968,19 +986,17 @@ metorial.createServer<{
       }
     );
 
-    server.registerTool(
+    registerScopedTool(
       'delete_label',
       {
         title: 'Delete Label',
         description: 'Delete a label',
         inputSchema: {
           labelId: z.string().describe('Label ID to delete')
-        },
-        _meta: scopeMeta([GMAIL_LABELS])
+        }
       },
       async ({ labelId }) => {
-        const err = scopeError([GMAIL_LABELS]);
-        if (err) return err;
+
         const result = await makeGmailRequest(`/users/me/labels/${labelId}`, 'DELETE');
         return {
           content: [
@@ -995,19 +1011,17 @@ metorial.createServer<{
 
     // ==================== DRAFT TOOLS ====================
 
-    server.registerTool(
+    registerScopedTool(
       'list_drafts',
       {
         title: 'List Drafts',
         description: 'List all draft messages',
         inputSchema: {
           maxResults: z.number().optional().describe('Maximum number of drafts (default: 100)')
-        },
-        _meta: scopeMeta([GMAIL_MODIFY])
+        }
       },
       async ({ maxResults = 100 }) => {
-        const err = scopeError([GMAIL_MODIFY]);
-        if (err) return err;
+
         const result = await makeGmailRequest(`/users/me/drafts?maxResults=${maxResults}`);
         return {
           content: [{ type: 'text', text: JSON.stringify(result, null, 2) }]
@@ -1015,19 +1029,17 @@ metorial.createServer<{
       }
     );
 
-    server.registerTool(
+    registerScopedTool(
       'get_draft',
       {
         title: 'Get Draft',
         description: 'Get a specific draft',
         inputSchema: {
           draftId: z.string().describe('Draft ID')
-        },
-        _meta: scopeMeta([GMAIL_MODIFY])
+        }
       },
       async ({ draftId }) => {
-        const err = scopeError([GMAIL_MODIFY]);
-        if (err) return err;
+
         const result = await makeGmailRequest(`/users/me/drafts/${draftId}`);
         return {
           content: [{ type: 'text', text: JSON.stringify(result, null, 2) }]
@@ -1035,7 +1047,7 @@ metorial.createServer<{
       }
     );
 
-    server.registerTool(
+    registerScopedTool(
       'create_draft',
       {
         title: 'Create Draft',
@@ -1047,12 +1059,10 @@ metorial.createServer<{
           isHtml: z.boolean().optional().describe('Whether body is HTML (default: false)'),
           cc: z.array(z.string()).optional().describe('CC recipients'),
           bcc: z.array(z.string()).optional().describe('BCC recipients')
-        },
-        _meta: scopeMeta([GMAIL_MODIFY])
+        }
       },
-      async input => {
-        const err = scopeError([GMAIL_MODIFY]);
-        if (err) return err;
+      asyncinput => {
+
         const raw = createMimeMessage(
           input.to,
           input.subject,
@@ -1072,7 +1082,7 @@ metorial.createServer<{
       }
     );
 
-    server.registerTool(
+    registerScopedTool(
       'update_draft',
       {
         title: 'Update Draft',
@@ -1083,12 +1093,10 @@ metorial.createServer<{
           subject: z.string().describe('Email subject'),
           body: z.string().describe('Email body'),
           isHtml: z.boolean().optional().describe('Whether body is HTML (default: false)')
-        },
-        _meta: scopeMeta([GMAIL_MODIFY])
+        }
       },
       async ({ draftId, ...input }) => {
-        const err = scopeError([GMAIL_MODIFY]);
-        if (err) return err;
+
         const raw = createMimeMessage(
           input.to,
           input.subject,
@@ -1108,19 +1116,17 @@ metorial.createServer<{
       }
     );
 
-    server.registerTool(
+    registerScopedTool(
       'send_draft',
       {
         title: 'Send Draft',
         description: 'Send a draft message',
         inputSchema: {
           draftId: z.string().describe('Draft ID to send')
-        },
-        _meta: scopeMeta([GMAIL_MODIFY])
+        }
       },
       async ({ draftId }) => {
-        const err = scopeError([GMAIL_MODIFY]);
-        if (err) return err;
+
         const result = await makeGmailRequest('/users/me/drafts/send', 'POST', {
           id: draftId
         });
@@ -1130,19 +1136,17 @@ metorial.createServer<{
       }
     );
 
-    server.registerTool(
+    registerScopedTool(
       'delete_draft',
       {
         title: 'Delete Draft',
         description: 'Delete a draft',
         inputSchema: {
           draftId: z.string().describe('Draft ID to delete')
-        },
-        _meta: scopeMeta([GMAIL_MODIFY])
+        }
       },
       async ({ draftId }) => {
-        const err = scopeError([GMAIL_MODIFY]);
-        if (err) return err;
+
         const result = await makeGmailRequest(`/users/me/drafts/${draftId}`, 'DELETE');
         return {
           content: [
@@ -1157,17 +1161,15 @@ metorial.createServer<{
 
     // ==================== FILTER TOOLS ====================
 
-    server.registerTool(
+    registerScopedTool(
       'list_filters',
       {
         title: 'List Filters',
         description: 'List all filters',
         inputSchema: {},
-        _meta: scopeMeta([GMAIL_SETTINGS])
       },
       async () => {
-        const err = scopeError([GMAIL_SETTINGS]);
-        if (err) return err;
+
         const result = await makeGmailRequest('/users/me/settings/filters');
         return {
           content: [{ type: 'text', text: JSON.stringify(result, null, 2) }]
@@ -1175,7 +1177,7 @@ metorial.createServer<{
       }
     );
 
-    server.registerTool(
+    registerScopedTool(
       'create_filter',
       {
         title: 'Create Filter',
@@ -1188,12 +1190,10 @@ metorial.createServer<{
           addLabelIds: z.array(z.string()).optional().describe('Labels to add'),
           removeLabelIds: z.array(z.string()).optional().describe('Labels to remove'),
           forward: z.string().optional().describe('Forward to this email address')
-        },
-        _meta: scopeMeta([GMAIL_SETTINGS])
+        }
       },
       async ({ from, to, subject, query, addLabelIds, removeLabelIds, forward }) => {
-        const err = scopeError([GMAIL_SETTINGS]);
-        if (err) return err;
+
         const criteria: any = {};
         if (from) criteria.from = from;
         if (to) criteria.to = to;
@@ -1215,19 +1215,17 @@ metorial.createServer<{
       }
     );
 
-    server.registerTool(
+    registerScopedTool(
       'delete_filter',
       {
         title: 'Delete Filter',
         description: 'Delete a filter',
         inputSchema: {
           filterId: z.string().describe('Filter ID to delete')
-        },
-        _meta: scopeMeta([GMAIL_SETTINGS])
+        }
       },
       async ({ filterId }) => {
-        const err = scopeError([GMAIL_SETTINGS]);
-        if (err) return err;
+
         const result = await makeGmailRequest(
           `/users/me/settings/filters/${filterId}`,
           'DELETE'
@@ -1245,17 +1243,15 @@ metorial.createServer<{
 
     // ==================== PROFILE/SETTINGS TOOLS ====================
 
-    server.registerTool(
+    registerScopedTool(
       'get_profile',
       {
         title: 'Get Profile',
         description: 'Get Gmail profile information',
         inputSchema: {},
-        _meta: scopeMeta([GMAIL_MODIFY])
       },
       async () => {
-        const err = scopeError([GMAIL_MODIFY]);
-        if (err) return err;
+
         const result = await makeGmailRequest('/users/me/profile');
         return {
           content: [{ type: 'text', text: JSON.stringify(result, null, 2) }]
@@ -1263,17 +1259,15 @@ metorial.createServer<{
       }
     );
 
-    server.registerTool(
+    registerScopedTool(
       'get_vacation_settings',
       {
         title: 'Get Vacation Settings',
         description: 'Get vacation/auto-reply settings',
         inputSchema: {},
-        _meta: scopeMeta([GMAIL_SETTINGS])
       },
       async () => {
-        const err = scopeError([GMAIL_SETTINGS]);
-        if (err) return err;
+
         const result = await makeGmailRequest('/users/me/settings/vacation');
         return {
           content: [{ type: 'text', text: JSON.stringify(result, null, 2) }]
@@ -1281,7 +1275,7 @@ metorial.createServer<{
       }
     );
 
-    server.registerTool(
+    registerScopedTool(
       'update_vacation_settings',
       {
         title: 'Update Vacation Settings',
@@ -1296,12 +1290,10 @@ metorial.createServer<{
           responseBodyHtml: z.string().optional().describe('Auto-reply body (HTML)'),
           startTime: z.string().optional().describe('Start time (milliseconds since epoch)'),
           endTime: z.string().optional().describe('End time (milliseconds since epoch)')
-        },
-        _meta: scopeMeta([GMAIL_SETTINGS])
+        }
       },
-      async input => {
-        const err = scopeError([GMAIL_SETTINGS]);
-        if (err) return err;
+      asyncinput => {
+
         const settings: any = {
           enableAutoReply: input.enableAutoReply
         };
@@ -1322,7 +1314,7 @@ metorial.createServer<{
 
     // ==================== SEARCH TOOLS ====================
 
-    server.registerTool(
+    registerScopedTool(
       'search_messages',
       {
         title: 'Search Messages',
@@ -1335,12 +1327,10 @@ metorial.createServer<{
             .number()
             .optional()
             .describe('Maximum number of results (default: 100)')
-        },
-        _meta: scopeMeta([GMAIL_MODIFY])
+        }
       },
       async ({ query, maxResults = 100 }) => {
-        const err = scopeError([GMAIL_MODIFY]);
-        if (err) return err;
+
         const result = await makeGmailRequest(
           `/users/me/messages?q=${encodeURIComponent(query)}&maxResults=${maxResults}`
         );
@@ -1350,7 +1340,7 @@ metorial.createServer<{
       }
     );
 
-    server.registerTool(
+    registerScopedTool(
       'get_attachment',
       {
         title: 'Get Attachment',
@@ -1358,12 +1348,10 @@ metorial.createServer<{
         inputSchema: {
           messageId: z.string().describe('Message ID'),
           attachmentId: z.string().describe('Attachment ID')
-        },
-        _meta: scopeMeta([GMAIL_MODIFY])
+        }
       },
       async ({ messageId, attachmentId }) => {
-        const err = scopeError([GMAIL_MODIFY]);
-        if (err) return err;
+
         const result = await makeGmailRequest(
           `/users/me/messages/${messageId}/attachments/${attachmentId}`
         );
